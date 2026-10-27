@@ -1,0 +1,6 @@
+@HB.RentalApplication.Api_HostAddress = http://localhost:5057
+
+GET {{HB.RentalApplication.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
