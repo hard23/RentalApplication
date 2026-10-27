@@ -10,7 +10,7 @@ The Rental Application Tracking API lets clients:
 - Retrieve a single application by ID.
 - List applications with optional filtering by property and status, with pagination.
 - Transition an application through its status workflow (for example, `Submitted` ? `UnderReview` ? `Approved`/`Denied`).
-- Retrieve the history of status changes for an application.
+- Retrieve the history of status changes for an application, including the initial submission entry.
 
 Status changes and their history entries are written in the same database transaction, and concurrent updates to the same application are guarded by a row version.
 
@@ -64,7 +64,7 @@ Status transition rules live in `TransitionApplicationCommandHandler` (`HB.Renta
 
 ### Application history
 
-Every successful transition creates a `RentalApplicationHistory` record containing the application ID, `FromStatus`, `ToStatus`, `TimestampUtc`, `Actor`, and an optional `Reason`. The history entry is staged through `RentalApplicationHistoryRepository.AddAsync` and committed by `RentalApplicationRepository.UpdateAsync` in the same `SaveChanges` call, so the status change and its history are saved together or not at all.
+Every application gets an initial history entry (`Submitted` ? `Submitted`, actor `renter`, reason `Application created`) when it is created. Every successful transition then creates a `RentalApplicationHistory` record containing the application ID, `FromStatus`, `ToStatus`, `TimestampUtc`, `Actor`, and an optional `Reason`. History entries are staged through `RentalApplicationHistoryRepository.AddAsync` and committed by `RentalApplicationRepository` in the same `SaveChanges` call as the application change, so the status change and its history are saved together or not at all. The history query returns entries ordered by `TimestampUtc` ascending.
 
 ### Error handling
 
@@ -95,7 +95,7 @@ Request body:
 }
 ```
 
-- `householdSize` must be at least 1 and is validated, but it is **not currently persisted**. The controller does not pass it to the command.
+- `householdSize` must be at least 1 and is persisted on the application.
 - `annualIncome` must be zero or greater.
 - Success: `201 Created` with a `Location` header (`/applications/{applicationId}`) and a `CreateApplicationResponse` body.
 - Validation failure: `400 Bad Request` with `ValidationProblemDetails`.
@@ -136,7 +136,7 @@ Request body:
 ```
 
 - `to` is a `RentalApplicationStatus` value. It is required and must be a valid enum value.
-- `actor` is required. It is used to authorize the renter-only withdrawal rule.
+- `actor` is required. It is used to authorize the owner-only review and decision transitions and the renter-only withdrawal rule.
 - `reason` is optional and is stored in the history entry.
 
 Success: `200 OK` with a `TransitionApplicationResponse` body:
@@ -160,7 +160,7 @@ Other responses:
 ### `GET /applications/{id}/history` - Get application history
 
 - `id` is a GUID route parameter.
-- Success: `200 OK` with a `GetApplicationHistoryResponse` body.
+- Success: `200 OK` with a `GetApplicationHistoryResponse` body containing `applicationId` and `entries` (ordered by `timestampUtc` ascending). Each entry has `fromStatus`, `toStatus`, `timestampUtc`, `actor`, and `reason`. An application with no history returns an empty `entries` list.
 - Not found: `404 Not Found` with `ProblemDetails`.
 
 ## 5. Application Status Workflow
@@ -169,9 +169,9 @@ Statuses: `Submitted`, `UnderReview`, `Approved`, `Denied`, `Withdrawn`.
 
 | From | To | Allowed by |
 |---|---|---|
-| `Submitted` | `UnderReview` | Any actor |
-| `UnderReview` | `Approved` | Any actor |
-| `UnderReview` | `Denied` | Any actor |
+| `Submitted` | `UnderReview` | Actor `owner` only (case-insensitive) |
+| `UnderReview` | `Approved` | Actor `owner` only (case-insensitive) |
+| `UnderReview` | `Denied` | Actor `owner` only (case-insensitive) |
 | `Submitted` or `UnderReview` | `Withdrawn` | Actor `renter` only (case-insensitive) |
 
 - `Approved`, `Denied`, and `Withdrawn` are final states. Any transition from them is rejected.
@@ -257,12 +257,11 @@ The tests do not require a SQL Server instance because they use the EF Core InMe
 ### Security and access control
 
 - Authentication and authorization. The actor is self-declared.
-- Enforcing that the actor is a specific owner or renter for the given application. Only the literal actor `renter` is checked for withdrawal, and any actor can approve or deny.
-- Ownership-based filtering in list queries (see the note in section 4).
+- Enforcing that the actor is a specific owner or renter for the given application. Currently, any caller can send `owner` or `renter` as the actor.
 
 ### Features and data
 
-- Persisting `householdSize` on create.
+- None currently planned in this section.
 
 ### Performance
 

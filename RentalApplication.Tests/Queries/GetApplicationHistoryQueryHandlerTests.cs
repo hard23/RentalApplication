@@ -1,20 +1,12 @@
 using HB.RentalApplication.Application.Queries.GetApplicationHistory;
 using HB.RentalApplication.Domain;
-using HB.RentalApplication.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
+using HB.RentalApplication.Domain.Repositories;
+using NSubstitute;
 
 namespace RentalApplication.Tests.Queries;
 
 public class GetApplicationHistoryQueryHandlerTests
 {
-    private static RentalApplicationDbContext CreateContext()
-    {
-        var options = new DbContextOptionsBuilder<RentalApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new RentalApplicationDbContext(options);
-    }
-
     private static HB.RentalApplication.Domain.RentalApplication CreateApplication() => new()
     {
         Id = Guid.NewGuid(),
@@ -43,22 +35,28 @@ public class GetApplicationHistoryQueryHandlerTests
         Reason = reason
     };
 
-    private static GetApplicationHistoryQueryHandler CreateHandler(RentalApplicationDbContext context)
-        => new(new RentalApplicationRepository(context), new RentalApplicationHistoryRepository(context));
+    private static (GetApplicationHistoryQueryHandler Handler, IRentalApplicationRepository Repository, IRentalApplicationHistoryRepository HistoryRepository)
+        CreateMockedHandler()
+    {
+        var repository = Substitute.For<IRentalApplicationRepository>();
+        var historyRepository = Substitute.For<IRentalApplicationHistoryRepository>();
+        var handler = new GetApplicationHistoryQueryHandler(repository, historyRepository);
+        return (handler, repository, historyRepository);
+    }
 
     [Fact]
     public async Task Handle_ExistingApplication_ReturnsEntriesOrderedByTimestamp()
     {
-        await using var context = CreateContext();
         var application = CreateApplication();
-        context.RentalApplications.Add(application);
-        context.RentalApplicationHistories.AddRange(
-            CreateHistory(application.Id, RentalApplicationStatus.UnderReview, RentalApplicationStatus.Approved,
-                new DateTime(2024, 1, 3, 0, 0, 0, DateTimeKind.Utc)),
+        var (handler, repository, historyRepository) = CreateMockedHandler();
+        repository.GetByIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(application);
+        historyRepository.GetByApplicationIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(new List<RentalApplicationHistory>
+        {
             CreateHistory(application.Id, RentalApplicationStatus.Submitted, RentalApplicationStatus.UnderReview,
-                new DateTime(2024, 1, 2, 0, 0, 0, DateTimeKind.Utc)));
-        await context.SaveChangesAsync();
-        var handler = CreateHandler(context);
+                new DateTime(2024, 1, 2, 0, 0, 0, DateTimeKind.Utc)),
+            CreateHistory(application.Id, RentalApplicationStatus.UnderReview, RentalApplicationStatus.Approved,
+                new DateTime(2024, 1, 3, 0, 0, 0, DateTimeKind.Utc))
+        });
 
         var response = await handler.Handle(new GetApplicationHistoryQuery(application.Id), CancellationToken.None);
 
@@ -72,14 +70,14 @@ public class GetApplicationHistoryQueryHandlerTests
     [Fact]
     public async Task Handle_ReturnsMappedEntryFields()
     {
-        await using var context = CreateContext();
         var application = CreateApplication();
         var timestamp = new DateTime(2024, 1, 2, 9, 0, 0, DateTimeKind.Utc);
-        context.RentalApplications.Add(application);
-        context.RentalApplicationHistories.Add(CreateHistory(application.Id,
-            RentalApplicationStatus.Submitted, RentalApplicationStatus.Withdrawn, timestamp, "Moved away"));
-        await context.SaveChangesAsync();
-        var handler = CreateHandler(context);
+        var (handler, repository, historyRepository) = CreateMockedHandler();
+        repository.GetByIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(application);
+        historyRepository.GetByApplicationIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(new List<RentalApplicationHistory>
+        {
+            CreateHistory(application.Id, RentalApplicationStatus.Submitted, RentalApplicationStatus.Withdrawn, timestamp, "Moved away")
+        });
 
         var response = await handler.Handle(new GetApplicationHistoryQuery(application.Id), CancellationToken.None);
 
@@ -94,11 +92,10 @@ public class GetApplicationHistoryQueryHandlerTests
     [Fact]
     public async Task Handle_ExistingApplicationWithoutHistory_ReturnsEmptyEntries()
     {
-        await using var context = CreateContext();
         var application = CreateApplication();
-        context.RentalApplications.Add(application);
-        await context.SaveChangesAsync();
-        var handler = CreateHandler(context);
+        var (handler, repository, historyRepository) = CreateMockedHandler();
+        repository.GetByIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(application);
+        historyRepository.GetByApplicationIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(new List<RentalApplicationHistory>());
 
         var response = await handler.Handle(new GetApplicationHistoryQuery(application.Id), CancellationToken.None);
 
@@ -107,33 +104,29 @@ public class GetApplicationHistoryQueryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_OnlyReturnsHistoryForRequestedApplication()
+    public async Task Handle_OnlyRequestsHistoryForRequestedApplication()
     {
-        await using var context = CreateContext();
         var application = CreateApplication();
-        var other = CreateApplication();
-        context.RentalApplications.AddRange(application, other);
-        context.RentalApplicationHistories.Add(CreateHistory(other.Id,
-            RentalApplicationStatus.Submitted, RentalApplicationStatus.UnderReview,
-            new DateTime(2024, 1, 2, 0, 0, 0, DateTimeKind.Utc)));
-        await context.SaveChangesAsync();
-        var handler = CreateHandler(context);
+        var (handler, repository, historyRepository) = CreateMockedHandler();
+        repository.GetByIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(application);
+        historyRepository.GetByApplicationIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(new List<RentalApplicationHistory>());
 
-        var response = await handler.Handle(new GetApplicationHistoryQuery(application.Id), CancellationToken.None);
+        await handler.Handle(new GetApplicationHistoryQuery(application.Id), CancellationToken.None);
 
-        Assert.Empty(response.Entries);
+        await historyRepository.Received(1).GetByApplicationIdAsync(application.Id, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Handle_NonexistentApplication_ThrowsKeyNotFoundException()
     {
-        await using var context = CreateContext();
-        var handler = CreateHandler(context);
         var missingId = Guid.NewGuid();
+        var (handler, repository, historyRepository) = CreateMockedHandler();
+        repository.GetByIdAsync(missingId, Arg.Any<CancellationToken>()).Returns((HB.RentalApplication.Domain.RentalApplication?)null);
 
         var ex = await Assert.ThrowsAsync<KeyNotFoundException>(
             () => handler.Handle(new GetApplicationHistoryQuery(missingId), CancellationToken.None));
 
         Assert.Contains(missingId.ToString(), ex.Message);
+        await historyRepository.DidNotReceiveWithAnyArgs().GetByApplicationIdAsync(default, default);
     }
 }

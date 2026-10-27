@@ -1,16 +1,16 @@
 using RentalApplicationEntity = HB.RentalApplication.Domain.RentalApplication;
 using HB.RentalApplication.Domain;
-using HB.RentalApplication.Infrastructure.Persistence;
+using HB.RentalApplication.Domain.Repositories;
 using MediatR;
 
 namespace HB.RentalApplication.Application.Commands.CreateApplication;
 
 public class CreateApplicationCommandHandler : IRequestHandler<CreateApplicationCommand, CreateApplicationResponse>
 {
-    private readonly RentalApplicationRepository _repository;
-    private readonly RentalApplicationHistoryRepository _historyRepository;
+    private readonly IRentalApplicationRepository _repository;
+    private readonly IRentalApplicationHistoryRepository _historyRepository;
 
-    public CreateApplicationCommandHandler(RentalApplicationRepository repository, RentalApplicationHistoryRepository historyRepository)
+    public CreateApplicationCommandHandler(IRentalApplicationRepository repository, IRentalApplicationHistoryRepository historyRepository)
     {
         _repository = repository;
         _historyRepository = historyRepository;

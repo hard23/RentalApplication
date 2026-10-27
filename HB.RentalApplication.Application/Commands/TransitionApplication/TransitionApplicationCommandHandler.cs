@@ -1,15 +1,15 @@
-using HB.RentalApplication.Infrastructure.Persistence;
 using MediatR;
 using HB.RentalApplication.Domain;
+using HB.RentalApplication.Domain.Repositories;
 
 namespace HB.RentalApplication.Application.Commands.TransitionApplication;
 
 public class TransitionApplicationCommandHandler : IRequestHandler<TransitionApplicationCommand, TransitionApplicationResponse>
 {
-    private readonly RentalApplicationRepository _repository;
-    private readonly RentalApplicationHistoryRepository _historyRepository;
+    private readonly IRentalApplicationRepository _repository;
+    private readonly IRentalApplicationHistoryRepository _historyRepository;
 
-    public TransitionApplicationCommandHandler(RentalApplicationRepository repository, RentalApplicationHistoryRepository historyRepository)
+    public TransitionApplicationCommandHandler(IRentalApplicationRepository repository, IRentalApplicationHistoryRepository historyRepository)
     {
         _repository = repository;
         _historyRepository = historyRepository;

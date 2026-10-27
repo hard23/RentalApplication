@@ -1,3 +1,4 @@
+using HB.RentalApplication.Domain.Repositories;
 using HB.RentalApplication.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -12,8 +13,8 @@ public static class InfrastructureServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         services.AddDbContext<RentalApplicationDbContext>(options =>
             options.UseSqlServer(connectionString));
-        services.AddScoped<RentalApplicationRepository>();
-        services.AddScoped<RentalApplicationHistoryRepository>();
+        services.AddScoped<IRentalApplicationRepository, RentalApplicationRepository>();
+        services.AddScoped<IRentalApplicationHistoryRepository, RentalApplicationHistoryRepository>();
         return services;
     }
 }

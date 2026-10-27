@@ -2,12 +2,13 @@ using Microsoft.EntityFrameworkCore;
 using System.Threading;
 using System.Threading.Tasks;
 using HB.RentalApplication.Domain;
+using HB.RentalApplication.Domain.Repositories;
 using System;
 using System.Collections.Generic;
 
 namespace HB.RentalApplication.Infrastructure.Persistence;
 
-public class RentalApplicationHistoryRepository
+public class RentalApplicationHistoryRepository : IRentalApplicationHistoryRepository
 {
     private readonly RentalApplicationDbContext _dbContext;
 

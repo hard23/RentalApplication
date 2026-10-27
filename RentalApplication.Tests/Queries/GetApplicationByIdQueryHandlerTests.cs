@@ -1,20 +1,12 @@
 using HB.RentalApplication.Application.Queries.GetApplicationById;
 using HB.RentalApplication.Domain;
-using HB.RentalApplication.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
+using HB.RentalApplication.Domain.Repositories;
+using NSubstitute;
 
 namespace RentalApplication.Tests.Queries;
 
 public class GetApplicationByIdQueryHandlerTests
 {
-    private static RentalApplicationDbContext CreateContext()
-    {
-        var options = new DbContextOptionsBuilder<RentalApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new RentalApplicationDbContext(options);
-    }
-
     private static HB.RentalApplication.Domain.RentalApplication CreateApplication(
         RentalApplicationStatus status = RentalApplicationStatus.Submitted) => new()
     {
@@ -24,6 +16,7 @@ public class GetApplicationByIdQueryHandlerTests
         ApplicantEmail = "jane@example.com",
         PropertyAddress = "1 Main St",
         AnnualIncome = 85000m,
+        HouseholdSize = 3,
         Status = status,
         CreatedAtUtc = new DateTime(2024, 1, 15, 10, 30, 0, DateTimeKind.Utc),
         UpdatedAtUtc = new DateTime(2024, 1, 16, 10, 30, 0, DateTimeKind.Utc),
@@ -32,17 +25,18 @@ public class GetApplicationByIdQueryHandlerTests
         RowVersion = Array.Empty<byte>()
     };
 
-    private static GetApplicationByIdQueryHandler CreateHandler(RentalApplicationDbContext context)
-        => new(new RentalApplicationRepository(context));
+    private static (GetApplicationByIdQueryHandler Handler, IRentalApplicationRepository Repository) CreateMockedHandler()
+    {
+        var repository = Substitute.For<IRentalApplicationRepository>();
+        return (new GetApplicationByIdQueryHandler(repository), repository);
+    }
 
     [Fact]
     public async Task Handle_ExistingId_ReturnsMatchingApplicationDetails()
     {
-        await using var context = CreateContext();
         var application = CreateApplication();
-        context.RentalApplications.Add(application);
-        await context.SaveChangesAsync();
-        var handler = CreateHandler(context);
+        var (handler, repository) = CreateMockedHandler();
+        repository.GetByIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(application);
 
         var response = await handler.Handle(new GetApplicationByIdQuery(application.Id), CancellationToken.None);
 
@@ -54,18 +48,16 @@ public class GetApplicationByIdQueryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_DefaultFieldsNotInDomain_AreZero()
+    public async Task Handle_ExistingId_MapsHouseholdSizeAndAnnualIncome()
     {
-        await using var context = CreateContext();
         var application = CreateApplication();
-        context.RentalApplications.Add(application);
-        await context.SaveChangesAsync();
-        var handler = CreateHandler(context);
+        var (handler, repository) = CreateMockedHandler();
+        repository.GetByIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(application);
 
         var response = await handler.Handle(new GetApplicationByIdQuery(application.Id), CancellationToken.None);
 
-        Assert.Equal(0, response.HouseholdSize);
-        Assert.Equal(0m, response.AnnualIncome);
+        Assert.Equal(3, response.HouseholdSize);
+        Assert.Equal(85000m, response.AnnualIncome);
     }
 
     [Theory]
@@ -76,11 +68,9 @@ public class GetApplicationByIdQueryHandlerTests
     [InlineData(RentalApplicationStatus.Withdrawn)]
     public async Task Handle_ReturnsPersistedStatus(RentalApplicationStatus status)
     {
-        await using var context = CreateContext();
         var application = CreateApplication(status);
-        context.RentalApplications.Add(application);
-        await context.SaveChangesAsync();
-        var handler = CreateHandler(context);
+        var (handler, repository) = CreateMockedHandler();
+        repository.GetByIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(application);
 
         var response = await handler.Handle(new GetApplicationByIdQuery(application.Id), CancellationToken.None);
 
@@ -90,9 +80,9 @@ public class GetApplicationByIdQueryHandlerTests
     [Fact]
     public async Task Handle_NonexistentId_ThrowsKeyNotFoundException()
     {
-        await using var context = CreateContext();
-        var handler = CreateHandler(context);
         var missingId = Guid.NewGuid();
+        var (handler, repository) = CreateMockedHandler();
+        repository.GetByIdAsync(missingId, Arg.Any<CancellationToken>()).Returns((HB.RentalApplication.Domain.RentalApplication?)null);
 
         var ex = await Assert.ThrowsAsync<KeyNotFoundException>(
             () => handler.Handle(new GetApplicationByIdQuery(missingId), CancellationToken.None));
@@ -101,21 +91,16 @@ public class GetApplicationByIdQueryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_DoesNotModifyPersistedApplication()
+    public async Task Handle_DoesNotPersistChanges()
     {
-        await using var context = CreateContext();
         var application = CreateApplication(RentalApplicationStatus.UnderReview);
-        context.RentalApplications.Add(application);
-        await context.SaveChangesAsync();
-        var handler = CreateHandler(context);
+        var (handler, repository) = CreateMockedHandler();
+        repository.GetByIdAsync(application.Id, Arg.Any<CancellationToken>()).Returns(application);
 
         await handler.Handle(new GetApplicationByIdQuery(application.Id), CancellationToken.None);
 
-        // Query must not leave tracked changes behind.
-        Assert.False(context.ChangeTracker.HasChanges());
-        var persisted = await context.RentalApplications.AsNoTracking().SingleAsync(x => x.Id == application.Id);
-        Assert.Equal(RentalApplicationStatus.UnderReview, persisted.Status);
-        Assert.Equal(application.UpdatedAtUtc, persisted.UpdatedAtUtc);
-        Assert.Equal(application.AnnualIncome, persisted.AnnualIncome);
+        await repository.DidNotReceiveWithAnyArgs().UpdateAsync(default!, default);
+        await repository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        Assert.Equal(RentalApplicationStatus.UnderReview, application.Status);
     }
 }

@@ -1,16 +1,13 @@
-using HB.RentalApplication.Infrastructure.Persistence;
 using MediatR;
-using HB.RentalApplication.Application.Queries.GetApplicationById;
-using System.Threading;
-using System.Threading.Tasks;
+using HB.RentalApplication.Domain.Repositories;
 
 namespace HB.RentalApplication.Application.Queries.GetApplicationById;
 
 public class GetApplicationByIdQueryHandler : IRequestHandler<GetApplicationByIdQuery, GetApplicationByIdResponse>
 {
-    private readonly RentalApplicationRepository _repository;
+    private readonly IRentalApplicationRepository _repository;
 
-    public GetApplicationByIdQueryHandler(RentalApplicationRepository repository)
+    public GetApplicationByIdQueryHandler(IRentalApplicationRepository repository)
     {
         _repository = repository;
     }
@@ -28,8 +25,8 @@ public class GetApplicationByIdQueryHandler : IRequestHandler<GetApplicationById
             Id = application.Id,
             PropertyId = application.PropertyId,
             RenterEmail = application.ApplicantEmail,
-            HouseholdSize = 0, // Not present in domain, default to 0
-            AnnualIncome = 0, // Not present in domain, default to 0
+            HouseholdSize = application.HouseholdSize,
+            AnnualIncome = application.AnnualIncome,
             Status = application.Status.ToString(),
             SubmittedAtUtc = application.CreatedAtUtc
         };

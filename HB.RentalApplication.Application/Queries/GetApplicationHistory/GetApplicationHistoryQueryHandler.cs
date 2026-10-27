@@ -1,14 +1,14 @@
-using HB.RentalApplication.Infrastructure.Persistence;
 using MediatR;
+using HB.RentalApplication.Domain.Repositories;
 
 namespace HB.RentalApplication.Application.Queries.GetApplicationHistory;
 
 public class GetApplicationHistoryQueryHandler : IRequestHandler<GetApplicationHistoryQuery, GetApplicationHistoryResponse>
 {
-    private readonly RentalApplicationRepository _repository;
-    private readonly RentalApplicationHistoryRepository _historyRepository;
+    private readonly IRentalApplicationRepository _repository;
+    private readonly IRentalApplicationHistoryRepository _historyRepository;
 
-    public GetApplicationHistoryQueryHandler(RentalApplicationRepository repository, RentalApplicationHistoryRepository historyRepository)
+    public GetApplicationHistoryQueryHandler(IRentalApplicationRepository repository, IRentalApplicationHistoryRepository historyRepository)
     {
         _repository = repository;
         _historyRepository = historyRepository;

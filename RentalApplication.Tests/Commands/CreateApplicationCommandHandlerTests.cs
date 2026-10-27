@@ -1,20 +1,12 @@
 using HB.RentalApplication.Application.Commands.CreateApplication;
 using HB.RentalApplication.Domain;
-using HB.RentalApplication.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
+using HB.RentalApplication.Domain.Repositories;
+using NSubstitute;
 
 namespace RentalApplication.Tests.Commands;
 
 public class CreateApplicationCommandHandlerTests
 {
-    private static RentalApplicationDbContext CreateContext()
-    {
-        var options = new DbContextOptionsBuilder<RentalApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new RentalApplicationDbContext(options);
-    }
-
     private static CreateApplicationCommand CreateCommand() => new()
     {
         PropertyId = Guid.NewGuid(),
@@ -24,39 +16,46 @@ public class CreateApplicationCommandHandlerTests
         AnnualIncome = 85000m
     };
 
-    private static CreateApplicationCommandHandler CreateHandler(RentalApplicationDbContext context)
-        => new(new RentalApplicationRepository(context), new RentalApplicationHistoryRepository(context));
+    private static (CreateApplicationCommandHandler Handler, IRentalApplicationRepository Repository, IRentalApplicationHistoryRepository HistoryRepository)
+        CreateMockedHandler()
+    {
+        var repository = Substitute.For<IRentalApplicationRepository>();
+        var historyRepository = Substitute.For<IRentalApplicationHistoryRepository>();
+        return (new CreateApplicationCommandHandler(repository, historyRepository), repository, historyRepository);
+    }
 
     [Fact]
     public async Task Handle_ValidCommand_PersistsApplicationAsSubmitted()
     {
-        await using var context = CreateContext();
-        var handler = CreateHandler(context);
         var command = CreateCommand();
+        var (handler, repository, _) = CreateMockedHandler();
 
-        var response = await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
-        var persisted = await context.RentalApplications.AsNoTracking().SingleAsync(x => x.Id == response.ApplicationId);
-        Assert.Equal(RentalApplicationStatus.Submitted, persisted.Status);
-        Assert.Equal(command.PropertyId, persisted.PropertyId);
-        Assert.Equal(command.RenterFullName, persisted.ApplicantFullName);
-        Assert.Equal(command.RenterEmail, persisted.ApplicantEmail);
-        Assert.Equal(command.PropertyAddress, persisted.PropertyAddress);
-        Assert.Equal(command.AnnualIncome, persisted.AnnualIncome);
-        Assert.True(persisted.IsActive);
-        Assert.False(persisted.IsDeleted);
+        await repository.Received(1).AddAsync(
+            Arg.Is<HB.RentalApplication.Domain.RentalApplication>(a =>
+                a.Status == RentalApplicationStatus.Submitted
+                && a.PropertyId == command.PropertyId
+                && a.ApplicantFullName == command.RenterFullName
+                && a.ApplicantEmail == command.RenterEmail
+                && a.PropertyAddress == command.PropertyAddress
+                && a.AnnualIncome == command.AnnualIncome
+                && a.HouseholdSize == command.HouseholdSize
+                && a.IsActive
+                && !a.IsDeleted),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Handle_ValidCommand_ReturnsResponseMatchingPersistedApplication()
     {
-        await using var context = CreateContext();
-        var handler = CreateHandler(context);
+        var (handler, repository, _) = CreateMockedHandler();
 
         var response = await handler.Handle(CreateCommand(), CancellationToken.None);
 
-        var persisted = await context.RentalApplications.AsNoTracking().SingleAsync(x => x.Id == response.ApplicationId);
+        var persisted = await CapturePersistedAsync(repository);
         Assert.NotEqual(Guid.Empty, response.ApplicationId);
+        Assert.Equal(persisted.Id, response.ApplicationId);
         Assert.Equal(RentalApplicationStatus.Submitted.ToString(), response.Status);
         Assert.Equal(persisted.CreatedAtUtc, response.CreatedAtUtc);
     }
@@ -64,29 +63,44 @@ public class CreateApplicationCommandHandlerTests
     [Fact]
     public async Task Handle_CalledTwice_CreatesDistinctApplications()
     {
-        await using var context = CreateContext();
-        var handler = CreateHandler(context);
+        var (handler, repository, _) = CreateMockedHandler();
 
         var first = await handler.Handle(CreateCommand(), CancellationToken.None);
         var second = await handler.Handle(CreateCommand(), CancellationToken.None);
 
         Assert.NotEqual(first.ApplicationId, second.ApplicationId);
-        Assert.Equal(2, await context.RentalApplications.CountAsync());
+        await repository.Received(2).AddAsync(Arg.Any<HB.RentalApplication.Domain.RentalApplication>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task Handle_ValidCommand_RecordsInitialHistoryEntry()
+    public async Task Handle_ValidCommand_StagesInitialHistoryEntry()
     {
-        await using var context = CreateContext();
-        var handler = CreateHandler(context);
+        var (handler, repository, historyRepository) = CreateMockedHandler();
 
         var response = await handler.Handle(CreateCommand(), CancellationToken.None);
 
-        var entry = await context.RentalApplicationHistories.AsNoTracking().SingleAsync(x => x.ApplicationId == response.ApplicationId);
-        Assert.Equal(RentalApplicationStatus.Submitted, entry.FromStatus);
-        Assert.Equal(RentalApplicationStatus.Submitted, entry.ToStatus);
-        Assert.Equal(response.CreatedAtUtc, entry.TimestampUtc);
-        Assert.Equal("renter", entry.Actor);
-        Assert.Equal("Application created", entry.Reason);
+        var persisted = await CapturePersistedAsync(repository);
+        await historyRepository.Received(1).AddAsync(
+            Arg.Is<RentalApplicationHistory>(h =>
+                h.ApplicationId == response.ApplicationId
+                && h.FromStatus == RentalApplicationStatus.Submitted
+                && h.ToStatus == RentalApplicationStatus.Submitted
+                && h.TimestampUtc == response.CreatedAtUtc
+                && h.Actor == "renter"
+                && h.Reason == "Application created"),
+            Arg.Any<CancellationToken>());
+        Assert.Equal(persisted.Id, response.ApplicationId);
+    }
+
+    // Returns the application passed to the repository's AddAsync call.
+    private static async Task<HB.RentalApplication.Domain.RentalApplication> CapturePersistedAsync(IRentalApplicationRepository repository)
+    {
+        var calls = repository.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == nameof(IRentalApplicationRepository.AddAsync))
+            .ToList();
+        var last = calls.Last();
+        var application = (HB.RentalApplication.Domain.RentalApplication)last.GetArguments()[0]!;
+        await Task.CompletedTask;
+        return application;
     }
 }
