@@ -36,7 +36,7 @@ public class GetApplicationsQueryHandlerTests
     };
 
     private static GetApplicationsQueryHandler CreateHandler(RentalApplicationDbContext context)
-        => new(new RentalApplicationRepository(context), context);
+        => new(new RentalApplicationRepository(context));
 
     [Fact]
     public async Task Handle_NoFilters_ReturnsAllApplicationsWithTotalCount()

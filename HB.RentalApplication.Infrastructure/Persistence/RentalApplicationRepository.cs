@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using HB.RentalApplication.Domain;
@@ -47,6 +48,35 @@ public class RentalApplicationRepository : IRentalApplicationRepository
     {
         _dbContext.RentalApplications.Remove(entity);
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<(List<HB.RentalApplication.Domain.RentalApplication> Items, int TotalCount)> GetPagedAsync(
+        Guid? propertyId,
+        HB.RentalApplication.Domain.RentalApplicationStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.RentalApplications.AsNoTracking().AsQueryable();
+
+        if (propertyId.HasValue)
+        {
+            query = query.Where(x => x.PropertyId == propertyId.Value);
+        }
+        if (status.HasValue)
+        {
+            query = query.Where(x => x.Status == status.Value);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var items = await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items, totalCount);
     }
 }
 
