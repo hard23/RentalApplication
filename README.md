@@ -1,4 +1,4 @@
-# Rental Application Tracking API
+﻿# Rental Application Tracking API
 
 A RESTful ASP.NET Core Web API for submitting rental applications, tracking their status through a review workflow, and recording an audit history of every status change.
 
@@ -9,7 +9,7 @@ The Rental Application Tracking API lets clients:
 - Create a rental application for a property.
 - Retrieve a single application by ID.
 - List applications with optional filtering by property and status, with pagination.
-- Transition an application through its status workflow (for example, `Submitted` ? `UnderReview` ? `Approved`/`Denied`).
+- Transition an application through its status workflow (for example, `Submitted` → `UnderReview` → `Approved`/`Denied`).
 - Retrieve the history of status changes for an application, including the initial submission entry.
 
 Status changes and their history entries are written in the same database transaction, and concurrent updates to the same application are guarded by a row version.
@@ -77,7 +77,7 @@ Status transition rules live in `TransitionApplicationCommandHandler` (`HB.Renta
 
 ### Application history
 
-Every application gets an initial history entry (`Submitted` ? `Submitted`, actor `renter`, reason `Application created`) when it is created. Every successful transition then creates a `RentalApplicationHistory` record containing the application ID, `FromStatus`, `ToStatus`, `TimestampUtc`, `Actor`, and an optional `Reason`. History entries are staged through `RentalApplicationHistoryRepository.AddAsync` and committed by `RentalApplicationRepository` in the same `SaveChanges` call as the application change, so the status change and its history are saved together or not at all. The history query returns entries ordered by `TimestampUtc` ascending.
+Every application gets an initial history entry (`Submitted` → `Submitted`, actor `renter`, reason `Application created`) when it is created. Every successful transition then creates a `RentalApplicationHistory` record containing the application ID, `FromStatus`, `ToStatus`, `TimestampUtc`, `Actor`, and an optional `Reason`. History entries are staged through `RentalApplicationHistoryRepository.AddAsync` and committed by `RentalApplicationRepository` in the same `SaveChanges` call as the application change, so the status change and its history are saved together or not at all. The history query returns entries ordered by `TimestampUtc` ascending.
 
 ### Error handling
 
@@ -108,7 +108,7 @@ Request body:
 }
 ```
 
-- `householdSize` must be at least 1 and is persisted on the application.
+- `householdSize` must be between 1 and 12 and is persisted on the application.
 - `annualIncome` must be zero or greater.
 - Success: `201 Created` with a `Location` header (`/applications/{applicationId}`) and a `CreateApplicationResponse` body.
 - Validation failure: `400 Bad Request` with `ValidationProblemDetails`.
