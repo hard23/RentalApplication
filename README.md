@@ -28,6 +28,8 @@ Status changes and their history entries are written in the same database transa
 
 ## 3. Architecture and Design Decisions
 
+This solution follows **Clean Architecture**. Dependencies point inward: the Domain layer has no dependencies on other layers, Application depends only on Domain, and Api and Infrastructure depend on Application and Domain.
+
 The solution is split into four layers plus a test project:
 
 | Project | Responsibility |
@@ -273,6 +275,7 @@ The tests do not require a SQL Server instance because they use the EF Core InMe
 
 ## 11. AI Use
 
+- **AI tool:** GitHub Copilot, including its agent mode, was used during development.
 - **What I used it for:** Generating the API endpoints and controller actions, scaffolding MediatR handlers, drafting FluentValidation rules, writing xUnit tests, and explaining EF Core concurrency with `RowVersion`. The code was written through AI assistance and then reviewed and adjusted.
 - **What I changed:** Renamed members to match the layer conventions, adjusted validation limits, and rewrote generated tests to use the InMemory provider correctly.
 - **What I rejected:** Suggested authentication middleware that was out of scope, and a generic repository that duplicated the existing repositories. I also rejected the AI's suggestion to move the status transition rules into the Domain layer (a DDD-style approach). It would have split the workflow logic between the Domain and the handler, so I kept the rules in `TransitionApplicationCommandHandler`.
