@@ -51,6 +51,17 @@ Commands (`CreateApplication`, `TransitionApplication`) and queries (`GetApplica
 - Queries use `AsNoTracking()`.
 - The `RentalApplication` entity has a `RowVersion` byte array used for optimistic concurrency.
 
+### Repository pattern (Infrastructure layer)
+
+Data access follows the repository pattern:
+
+- **Abstractions live in Domain** (`HB.RentalApplication.Domain/Repositories/`): `IRentalApplicationRepository`, `IRentalApplicationHistoryRepository`, and a generic `IRepository<T>` for aggregate roots identified by a `Guid`. Application handlers depend only on these interfaces, never on EF Core types.
+- **Implementations live in Infrastructure** (`HB.RentalApplication.Infrastructure/Persistence/`): `RentalApplicationRepository` and `RentalApplicationHistoryRepository` implement the domain interfaces using `RentalApplicationDbContext`.
+- **Registration** is done in `InfrastructureServiceCollectionExtensions.AddInfrastructurePersistence`, which registers the DbContext with SQL Server and the repositories as scoped services, so one DbContext instance is shared per HTTP request.
+- **Unit of work:** there is no separate unit-of-work class. The shared scoped DbContext acts as the unit of work. History entries staged by `RentalApplicationHistoryRepository.AddAsync` are committed by the `SaveChanges` call in `RentalApplicationRepository.UpdateAsync`, together with the status change.
+- **Concurrency:** `RentalApplicationRepository.UpdateAsync` converts `DbUpdateConcurrencyException` into an `InvalidOperationException`, which the API maps to `409 Conflict`.
+- Note: `IRepository<T>` is defined but not yet implemented by the concrete repositories. The concrete interfaces are used instead.
+
 ### Validation
 
 - **Request-level validation** (API project): `CreateApplicationRequestValidator`, `TransitionApplicationRequestValidator`, and `GetApplicationsRequestValidator` are registered with FluentValidation and run explicitly in the controller. Failures return `400` with `ValidationProblemDetails`.
